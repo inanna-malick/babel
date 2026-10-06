@@ -1195,12 +1195,14 @@ class Scope {
 
         // Spec 9.2.10.28: The closure created by this expression should not have visibility of
         // declarations in the function body. If the binding is not a `param`-kind (as function parameters)
-        // or `local`-kind (as id in function expression),
-        // then it must be defined inside the function body, thus it should be skipped
+        // or `local`-kind (as id in function expression), or a catch parameter,
+        // then it must be defined inside the body, thus it should be skipped.
+        // Catch parameters are registered with the CatchClause as their binding path.
         if (
           previousPath?.isPattern() &&
           binding.kind !== "param" &&
-          binding.kind !== "local"
+          binding.kind !== "local" &&
+          !binding.path.isCatchClause()
         ) {
           // do nothing
         } else {

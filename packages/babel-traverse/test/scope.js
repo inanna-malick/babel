@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { parse } from "@babel/parser";
 import * as t from "@babel/types";
 
@@ -90,6 +91,96 @@ describe("scope", () => {
             .get("body.1.expression.params.0")
             .scope.getBinding("a").path.node.right.value,
         ).toBe("inside");
+      });
+    });
+
+    describe("catch parameter expression", () => {
+      it.each([
+        [
+          "earlier binding",
+          "try{throw{}}catch({a=1,b=a}){globalThis.result=[a,b]}",
+          [1, 1],
+        ],
+        [
+          "initializer closure",
+          "try{throw{}}catch({a=1,b=()=>a}){globalThis.result=[a,b()]}",
+          [1, 1],
+        ],
+        [
+          "computed key",
+          "try{throw{1:4}}catch({a=1,[a]:b}){globalThis.result=[a,b]}",
+          [1, 4],
+        ],
+        [
+          "array pattern",
+          "try{throw[]}catch([a=1,b=a]){globalThis.result=[a,b]}",
+          [1, 1],
+        ],
+        [
+          "nested pattern",
+          "try{throw{}}catch({a=1,nest:{b=a}={}}){globalThis.result=[a,b]}",
+          [1, 1],
+        ],
+      ])(
+        "resolves and renames %s references to the catch binding",
+        (_, body, expected) => {
+          const source = `let a=9;${body}`;
+          const program = getPath(source);
+          const catchPath = program.get("body.1.handler");
+          const binding = catchPath.scope.getBinding("a");
+          expect(binding.kind).toBe("let");
+          expect(binding.path).toBe(catchPath);
+          expect(Array.from(runInNewContext(source + ";result"))).toEqual(
+            expected,
+          );
+          const references = [];
+          program.traverse({
+            ReferencedIdentifier(path) {
+              if (path.node.name === "a") {
+                references.push(path);
+              }
+            },
+          });
+          for (const reference of references) {
+            expect(reference.scope.getBinding("a")).toBe(binding);
+          }
+          binding.scope.rename("a", "fresh_a");
+          for (const reference of references) {
+            expect(reference.node.name).toBe("fresh_a");
+            expect(reference.scope.getBinding("fresh_a")).toBe(binding);
+          }
+          expect(
+            Array.from(runInNewContext(String(program) + ";result")),
+          ).toEqual(expected);
+        },
+      );
+
+      it.each(["try{throw{}}catch({a=a}){}", "try{throw{}}catch({b=a,a=1}){}"])(
+        "preserves catch parameter temporal dead zones in %s",
+        body => {
+          const program = getPath(`let a=9;${body}`);
+          const evaluate = source => {
+            try {
+              runInNewContext(source);
+              return "normal";
+            } catch (error) {
+              return error.name;
+            }
+          };
+          expect(evaluate(String(program))).toBe("ReferenceError");
+          program.get("body.1.handler").scope.rename("a", "fresh_a");
+          expect(evaluate(String(program))).toBe("ReferenceError");
+        },
+      );
+
+      it("does not expose catch body declarations to the pattern", () => {
+        const program = getPath("let a=9;try{throw{}}catch({b=a}){let a=1;}");
+        const reference = program.get(
+          "body.1.handler.param.properties.0.value.right",
+        );
+        expect(reference.scope.getBinding("a")).toBe(
+          program.scope.getBinding("a"),
+        );
       });
     });
 
