@@ -3,7 +3,7 @@ import * as t from "@babel/types";
 import type { NodePath, ExplodedVisitor } from "../../index.ts";
 import { traverseNode } from "../../traverse-node.ts";
 import { explode } from "../../visitors.ts";
-import { getAssignmentIdentifiers, type Identifier } from "@babel/types";
+import { getBindingIdentifiers, type Identifier } from "@babel/types";
 
 let renameVisitor: ExplodedVisitor<Renamer>;
 const getRenameVisitor = () =>
@@ -54,13 +54,23 @@ const getRenameVisitor = () =>
       state,
     ) {
       if (path.isVariableDeclaration()) return;
-      const ids = path.isAssignmentExpression()
-        ? // See https://github.com/babel/babel/issues/16694
-          getAssignmentIdentifiers(path.node)
-        : path.getOuterBindingIdentifiers();
+      if (path.isAssignmentExpression()) {
+        // Collect every target occurrence, including repeated identifiers.
+        // Use the types helper directly for compatibility with older NodePaths:
+        // https://github.com/babel/babel/issues/16694
+        const ids = getBindingIdentifiers(path.node.left, true)[state.oldName];
+        if (ids) {
+          for (const id of ids) id.name = state.newName;
+        }
+        return;
+      }
+
+      const ids = path.getOuterBindingIdentifiers(true);
 
       for (const name in ids) {
-        if (name === state.oldName) ids[name].name = state.newName;
+        if (name === state.oldName) {
+          for (const id of ids[name]) id.name = state.newName;
+        }
       }
     },
   }));

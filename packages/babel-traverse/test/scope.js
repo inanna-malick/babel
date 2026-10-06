@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { parse } from "@babel/parser";
 import * as t from "@babel/types";
 
@@ -1151,6 +1152,100 @@ describe("scope", () => {
   });
 
   describe("rename", () => {
+    it.each([
+      ["triple array", "var [a,a,a=a+1]=[1,2,undefined];a;", 3],
+      ["triple object", "var {x:a,y:a,z:a=a+1}={x:1,y:2};a;", 3],
+      ["shorthand keys", "var {a,a:a,a:a=3}={a:undefined};a;", 3],
+      ["nested array", "var [a,[a,a=a+1]]=[1,[2,undefined]];a;", 3],
+      ["rest array", "var [a,a,...a]=[1,2,3,4];a;", [3, 4]],
+      ["rest object", "var {x:a,y:a,...a}={x:1,y:2,z:3};a;", { z: 3 }],
+      [
+        "multiple declarators",
+        "var [a,a,a=a+1]=[1,2,undefined],b=a;[a,b];",
+        [3, 3],
+      ],
+      [
+        "function parameter control",
+        "var a=9;function fn(a){return a}[a,fn(1)];",
+        [9, 1],
+      ],
+      [
+        "named function control",
+        "var a=9;const fn=function a(){return a};[a,fn().name];",
+        [9, "a"],
+      ],
+      [
+        "class method parameter control",
+        "var a=9;class C{static value(a){return a}}[a,C.value(1)];",
+        [9, 1],
+      ],
+      ["block shadow control", "var a=9;{let a=0;[a,a]=[1,2]}a;", 9],
+    ])("renames all var pattern occurrences in %s", (_, source, expected) => {
+      const code = `"use strict"; ${source}`;
+      const program = getPath(code);
+      const binding = program.scope.getBinding("a");
+      const occurrences = [];
+      const keys = [];
+      program.traverse({
+        Identifier(path) {
+          if (
+            path.node.name === "a" &&
+            (path.isBindingIdentifier() || path.isReferencedIdentifier()) &&
+            path.scope.getBinding("a") === binding
+          )
+            occurrences.push(path);
+        },
+        ObjectProperty(path) {
+          if (!path.node.computed && t.isIdentifier(path.node.key))
+            keys.push({ property: path.node, name: path.node.key.name });
+        },
+      });
+      const evaluate = source =>
+        JSON.parse(JSON.stringify(runInNewContext(source)));
+      expect(evaluate(code)).toEqual(expected);
+      binding.scope.rename("a", "fresh_a");
+      for (const occurrence of occurrences)
+        expect(occurrence.node.name).toBe("fresh_a");
+      for (const { property, name } of keys)
+        expect(property.key.name).toBe(name);
+      expect(evaluate(String(program))).toEqual(expected);
+    });
+
+    it.each([
+      ["ordinary array", "let a=0;[a,a]=[1,2];a;", 2],
+      ["ordinary object", "let a=0;({x:a,y:a}={x:1,y:2});a;", 2],
+      ["nested default", "let a=0;[a,{x:a=2}]=[1,{}];a;", 2],
+      ["rest target", "let a=0;[a,...a]=[1,2,3];a;", [2, 3]],
+      ["computed key", "let a=2;({[a]:a,y:a}={2:1,y:3});a;", 3],
+      [
+        "member target control",
+        "let a=0;let box={};[a,box[a]]=[1,2];[a,box[1]];",
+        [1, 2],
+      ],
+      [
+        "property key control",
+        "let a=0;let box={};[a,box.a]=[1,2];[a,box.a];",
+        [1, 2],
+      ],
+      ["body shadow control", "let a=9;{let a=0;[a,a]=[1,2]}a;", 9],
+      [
+        "right hand side control",
+        "let a=0;[a]=[(()=>{let a=9;return a})()];a;",
+        9,
+      ],
+    ])(
+      "renames every duplicate assigned identifier in %s",
+      (_, source, expected) => {
+        const code = `"use strict"; ${source}`;
+        const program = getPath(code);
+        const evaluate = source =>
+          JSON.parse(JSON.stringify(runInNewContext(source)));
+        expect(evaluate(code)).toEqual(expected);
+        program.scope.rename("a", "fresh_a");
+        expect(evaluate(String(program))).toEqual(expected);
+      },
+    );
+
     it(".parentPath after renaming variable in switch", () => {
       const program = getPath(`
         switch (x) {
