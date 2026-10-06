@@ -1,4 +1,3 @@
-var _temp;
 var _xBrandCheck = /*#__PURE__*/new WeakSet();
 var _yBrandCheck = /*#__PURE__*/new WeakSet();
 class F {
@@ -7,9 +6,9 @@ class F {
     _yBrandCheck.has(babelHelpers.checkInRHS(this));
     F === babelHelpers.checkInRHS(this);
   }
-  static #x = (_xBrandCheck.add(this), 0);
-  static #y = (_temp = (() => {
+  static #x = (_temp => (_temp = 0, _xBrandCheck.add(this), _temp))();
+  static #y = (_temp2 => (_temp2 = (() => {
     throw 'error';
-  })(), _yBrandCheck.add(this), _temp);
+  })(), _yBrandCheck.add(this), _temp2))();
   static #z() {}
 }

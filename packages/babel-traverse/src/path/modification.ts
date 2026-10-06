@@ -223,8 +223,25 @@ export function insertAfter<Nodes extends NodeOrNodeList<t.Node>>(
     if (self.node) {
       const node = self.node;
       let { scope } = this;
+      // Function and class values are evaluated in their enclosing scope.
+      if (self.isFunction() || self.isClass()) scope = scope.parent!;
 
-      if (scope.path.isPattern()) {
+      if (
+        scope.path.isPattern() ||
+        (scope.path.isClass() &&
+          self.find(
+            path =>
+              path.key === "value" &&
+              path.parentPath.scope.getFunctionParent() ===
+                scope.getFunctionParent() &&
+              (path.parentPath.isClassProperty() ||
+                path.parentPath.isClassPrivateProperty() ||
+                path.parentPath.isClassAccessorProperty()),
+          ))
+      ) {
+        // Field initializers may reenter the same class. A temporary pushed to
+        // the surrounding scope would be shared between initializer evaluations.
+
         assertExpression(node);
 
         self.replaceWith(callExpression(arrowFunctionExpression([], node), []));
@@ -247,9 +264,6 @@ export function insertAfter<Nodes extends NodeOrNodeList<t.Node>>(
       } else if (isAlmostConstantAssignment(node, scope)) {
         nodes.unshift(node);
         nodes.push(cloneNode(node.left));
-      } else if (scope.isPure(node, true)) {
-        // Insert the nodes before rather than after; it's not observable.
-        nodes.push(node);
       } else {
         // Inserting after the computed key of a method should insert the
         // temporary binding in the method's parent's scope.

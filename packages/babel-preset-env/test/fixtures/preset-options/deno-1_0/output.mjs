@@ -4,6 +4,6 @@ var _selfBrandCheck = /*#__PURE__*/new WeakSet();
 // static {} / ??= / #self in / C?.#self
 // The class declaration and the static private property should not be transpiled
 class C {
-  static #self = (_staticBlock = () => C.#self ?? (C.#self = _selfBrandCheck.has(babelHelpers.checkInRHS(C?.#self))), _selfBrandCheck.add(this), C);
+  static #self = (_staticBlock = () => C.#self ?? (C.#self = _selfBrandCheck.has(babelHelpers.checkInRHS(C?.#self))), (_temp => (_temp = C, _selfBrandCheck.add(this), _temp))());
 }
 _staticBlock();
