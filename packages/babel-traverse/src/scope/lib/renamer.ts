@@ -47,17 +47,21 @@ const getRenameVisitor = () =>
       }
     },
 
-    "AssignmentExpression|Declaration|VariableDeclarator"(
+    "AssignmentExpression|Declaration|VariableDeclarator|ForXStatement"(
       path: NodePath<
-        t.AssignmentExpression | t.Declaration | t.VariableDeclarator
+        | t.AssignmentExpression
+        | t.Declaration
+        | t.VariableDeclarator
+        | t.ForXStatement
       >,
       state,
     ) {
       if (path.isVariableDeclaration()) return;
-      const ids = path.isAssignmentExpression()
-        ? // See https://github.com/babel/babel/issues/16694
-          getAssignmentIdentifiers(path.node)
-        : path.getOuterBindingIdentifiers();
+      const ids =
+        path.isAssignmentExpression() || path.isForXStatement()
+          ? // See https://github.com/babel/babel/issues/16694
+            getAssignmentIdentifiers(path.node)
+          : path.getOuterBindingIdentifiers();
 
       for (const name in ids) {
         if (name === state.oldName) ids[name].name = state.newName;

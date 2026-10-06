@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { parse } from "@babel/parser";
 import * as t from "@babel/types";
 
@@ -1151,6 +1152,32 @@ describe("scope", () => {
   });
 
   describe("rename", () => {
+    it.each([
+      ["array for-of", "let a=2;for([a] of [[1]]){}a;", 1],
+      ["object for-of", "let a=2;for({x:a} of [{x:1}]){}a;", 1],
+      ["shorthand for-of", "let a=2;for({a} of [{a:1}]){}a;", 1],
+      ["computed for-of", "let a=2;for({[a]:a=7} of [{2:1}]){}a;", 1],
+      ["nested default for-of", "let a=2;for([[a=7]] of [[[]]]){}a;", 7],
+      ["rest for-of", "let a=2;for([...a] of [[1,3]]){}a;", [1, 3]],
+      ["array for-in", "let a=2;for([a] in {xy:0}){}a;", "x"],
+      ["object for-in", "let a=2;for({length:a} in {long:0}){}a;", 4],
+      ["identifier control", "let a=2;for(a of [1]){}a;", 1],
+      ["member control", "let a={x:2};for(a.x of [1]){}a.x;", 1],
+      ["loop shadow control", "let a=2;for(let [a=7] of [[]]){}a;", 2],
+      ["ordinary assignment control", "let a=2;[a]=[1];a;", 1],
+    ])(
+      "preserves native behavior when renaming %s targets",
+      (_, source, expected) => {
+        const code = `"use strict"; ${source}`;
+        const program = getPath(code);
+        const evaluate = source =>
+          JSON.parse(JSON.stringify(runInNewContext(source)));
+        expect(evaluate(code)).toEqual(expected);
+        program.scope.rename("a", "fresh_a");
+        expect(evaluate(String(program))).toEqual(expected);
+      },
+    );
+
     it(".parentPath after renaming variable in switch", () => {
       const program = getPath(`
         switch (x) {
