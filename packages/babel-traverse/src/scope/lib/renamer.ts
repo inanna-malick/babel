@@ -22,6 +22,15 @@ const getRenameVisitor = () =>
         )
       ) {
         path.skip();
+        if (
+          path.isCatchClause() &&
+          path.node.param &&
+          !path.scope.getOwnBinding(state.oldName)?.path.isCatchClause()
+        ) {
+          // Body declarations are not visible in the catch pattern. A binding
+          // in the catch parameter itself shadows the outer name throughout.
+          path.context.maybeQueue(path.get("param"));
+        }
         if (path.isMethod()) {
           path.requeueComputedKeyAndDecorators();
         }

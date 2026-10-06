@@ -1,3 +1,4 @@
+import { runInNewContext } from "node:vm";
 import { parse } from "@babel/parser";
 import * as t from "@babel/types";
 
@@ -1151,6 +1152,84 @@ describe("scope", () => {
   });
 
   describe("rename", () => {
+    it.each([
+      [
+        "object default",
+        "try{throw{}}catch({b=a}){let a=1;globalThis.result=[b,a]}",
+        [9, 1],
+      ],
+      [
+        "array default",
+        "try{throw[]}catch([b=a]){let a=1;globalThis.result=[b,a]}",
+        [9, 1],
+      ],
+      [
+        "initializer closure",
+        "try{throw{}}catch({b=()=>a}){let a=1;globalThis.result=[b(),a]}",
+        [9, 1],
+      ],
+      [
+        "computed key",
+        "try{throw{9:4}}catch({[a]:b}){let a=1;globalThis.result=[b,a]}",
+        [4, 1],
+      ],
+      [
+        "nested default",
+        "try{throw{}}catch({nest:{b=a}={}}){const a=1;globalThis.result=[b,a]}",
+        [9, 1],
+      ],
+      [
+        "body function",
+        "try{throw{}}catch({b=a}){function a(){}globalThis.result=[b,typeof a]}",
+        [9, "function"],
+      ],
+    ])(
+      "renames outer %s references in catch patterns despite body shadows",
+      (_, body, expected) => {
+        const code = `let a=9;${body}`;
+        const program = getPath(code);
+        const binding = program.scope.getBinding("a");
+        const references = [...binding.referencePaths];
+        expect(references.length).toBeGreaterThan(0);
+        expect(Array.from(runInNewContext(code + ";result"))).toEqual(expected);
+        program.scope.rename("a", "fresh_a");
+        for (const reference of references) {
+          expect(reference.node.name).toBe("fresh_a");
+          expect(reference.scope.getBinding("fresh_a")).toBe(binding);
+        }
+        expect(
+          Array.from(runInNewContext(String(program) + ";result")),
+        ).toEqual(expected);
+      },
+    );
+
+    it.each([
+      "try{throw 2}catch(a){globalThis.result=[a]}",
+      "try{throw{}}catch({a=2,b=a}){globalThis.result=[a,b]}",
+      "try{throw[]}catch([a=2,b=a]){globalThis.result=[a,b]}",
+      "try{throw{}}catch({a=a}){}",
+      "try{throw[]}catch([b=a,a=2]){}",
+      "try{throw{}}catch{let a=2;globalThis.result=[a]}",
+    ])(
+      "preserves catch-owned names and temporal dead zones under outer rename in %s",
+      body => {
+        const code = `let a=9;${body}`;
+        const program = getPath(code);
+        const evaluate = source => {
+          const context = {};
+          try {
+            runInNewContext(source, context);
+            return Array.from(context.result);
+          } catch (error) {
+            return error.name;
+          }
+        };
+        const before = evaluate(code);
+        program.scope.rename("a", "fresh_a");
+        expect(evaluate(String(program))).toEqual(before);
+      },
+    );
+
     it(".parentPath after renaming variable in switch", () => {
       const program = getPath(`
         switch (x) {
