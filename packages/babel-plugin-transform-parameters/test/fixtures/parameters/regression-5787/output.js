@@ -6,5 +6,6 @@ function f(a) {
   return [a, b, c, d];
 }
 function f(a) {
-  return void 0;
+  var _ref4;
+  return _ref4 = -1 + 1, _ref4 < 1 || arguments.length <= _ref4 ? undefined : arguments[_ref4];
 }

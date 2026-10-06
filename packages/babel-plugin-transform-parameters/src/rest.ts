@@ -235,7 +235,9 @@ function optimiseIndexGetter(
   }
 
   const { scope, parentPath } = path;
-  if (!scope.isPure(index)) {
+  // Even syntactically pure numeric expressions may run coercion hooks.
+  // Evaluate nonliteral indices once before the bounds checks and lookup.
+  if (!t.isNumericLiteral(index)) {
     const temp = scope.generateUidIdentifierBasedOnNode(index);
     scope.push({ id: temp, kind: "var" });
     parentPath.replaceWith(
