@@ -121,7 +121,13 @@ function valueToNode(value: unknown): t.Expression {
 
   // array
   if (Array.isArray(value)) {
-    return arrayExpression(value.map(valueToNode));
+    const elements: (t.Expression | null)[] = [];
+    // Like Array#map, snapshot length and include inherited indexed values.
+    // Missing entries must be explicit AST elisions rather than sparse slots.
+    for (let index = 0, length = value.length; index < length; index++) {
+      elements.push(index in value ? valueToNode(value[index]) : null);
+    }
+    return arrayExpression(elements);
   }
 
   // object

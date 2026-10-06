@@ -1,3 +1,5 @@
+import { runInNewContext } from "node:vm";
+import generate from "@babel/generator";
 import * as t from "../lib/index.js";
 
 describe("converters", function () {
@@ -116,6 +118,105 @@ describe("converters", function () {
         ]),
       );
     });
+    it.each([
+      ["one hole", new Array(1), [false]],
+      ["own undefined", [undefined], [true]],
+      [
+        "trailing holes",
+        Object.assign(new Array(3), { 0: 1 }),
+        [true, false, false],
+      ],
+      [
+        "mixed hole and undefined",
+        Object.assign(new Array(4), { 1: undefined, 2: 3 }),
+        [false, true, true, false],
+      ],
+    ])("preserves %s when converting arrays", (_, value, ownSlots) => {
+      const node = t.valueToNode(value);
+      expect(node.elements).toHaveLength(value.length);
+      expect(node.elements.map(element => element === null)).toEqual(
+        ownSlots.map(own => !own),
+      );
+      const actual = runInNewContext(`(${generate(node).code})`);
+      expect(actual.length).toBe(value.length);
+      expect(ownSlots.map((_, index) => Object.hasOwn(actual, index))).toEqual(
+        ownSlots,
+      );
+      expect(
+        ownSlots.map((_, index) => Object.is(actual[index], value[index])),
+      ).toEqual(ownSlots.map(() => true));
+    });
+
+    it("preserves nested array holes", () => {
+      const value = [
+        new Array(1),
+        Object.assign(new Array(2), { 0: undefined }),
+      ];
+      const node = t.valueToNode(value);
+      const actual = runInNewContext(`(${generate(node).code})`);
+      expect(actual).toHaveLength(2);
+      expect(actual[0]).toHaveLength(1);
+      expect(Object.hasOwn(actual[0], 0)).toBe(false);
+      expect(actual[1]).toHaveLength(2);
+      expect(Object.hasOwn(actual[1], 0)).toBe(true);
+      expect(actual[1][0]).toBeUndefined();
+      expect(Object.hasOwn(actual[1], 1)).toBe(false);
+    });
+
+    it("materializes inherited array values without invoking an iterator", () => {
+      const prototype = Object.create(Array.prototype);
+      let reads = 0;
+      Object.defineProperty(prototype, "0", {
+        get() {
+          reads++;
+          return 9;
+        },
+      });
+      const value = new Array(1);
+      Object.setPrototypeOf(value, prototype);
+      value[Symbol.iterator] = () => {
+        throw new Error("iterator must not run");
+      };
+      const node = t.valueToNode(value);
+      expect(reads).toBe(1);
+      expect(node.elements).toEqual([t.numericLiteral(9)]);
+      const actual = runInNewContext(`(${generate(node).code})`);
+      expect(Object.hasOwn(actual, 0)).toBe(true);
+      expect(actual[0]).toBe(9);
+    });
+
+    it("snapshots array length before getters append elements", () => {
+      const value = [0, 1];
+      Object.defineProperty(value, "0", {
+        get() {
+          value.push(2);
+          return 0;
+        },
+      });
+      const node = t.valueToNode(value);
+      expect(value).toHaveLength(3);
+      expect(node.elements).toEqual([t.numericLiteral(0), t.numericLiteral(1)]);
+    });
+
+    it.each(["truncate", "delete"])(
+      "retains absent later slots when a getter %s mutates an array",
+      action => {
+        const value = [0, 1];
+        Object.defineProperty(value, "0", {
+          get() {
+            if (action === "truncate") value.length = 1;
+            else delete value[1];
+            return 0;
+          },
+        });
+        const node = t.valueToNode(value);
+        expect(node.elements).toEqual([t.numericLiteral(0), null]);
+        const actual = runInNewContext(`(${generate(node).code})`);
+        expect(actual).toHaveLength(2);
+        expect(Object.hasOwn(actual, 1)).toBe(false);
+      },
+    );
+
     it("throws if cannot convert", function () {
       expect(function () {
         t.valueToNode(Object);
