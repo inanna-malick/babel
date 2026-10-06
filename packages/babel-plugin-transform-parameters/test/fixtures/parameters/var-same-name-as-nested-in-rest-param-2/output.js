@@ -6,7 +6,10 @@ function f() {
     x = _ref$length === void 0 ? 0 : _ref$length,
     _ref$y = _ref.y,
     y = _ref$y === void 0 ? x : _ref$y;
-  return x;
+  return function (x) {
+    var x;
+    return x;
+  }(x);
 }
 function g() {
   for (var _len2 = arguments.length, _ref2 = new Array(_len2), _key2 = 0; _key2 < _len2; _key2++) {

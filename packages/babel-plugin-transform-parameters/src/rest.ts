@@ -5,6 +5,7 @@ import {
   getIIFEVisitor,
   collectShadowedParamsNames,
   buildScopeIIFE,
+  hasParameterExpressions,
 } from "./shadow-utils.ts";
 
 const buildRest = template.statement(`
@@ -289,7 +290,10 @@ function optimiseLengthGetter(
   }
 }
 
-export default function convertFunctionRest(path: NodePath<t.Function>) {
+export default function convertFunctionRest(
+  path: NodePath<t.Function>,
+  onAsyncBodyWrapped?: () => void,
+) {
   const { node, scope } = path;
   if (!hasRest(node)) return false;
 
@@ -299,7 +303,15 @@ export default function convertFunctionRest(path: NodePath<t.Function>) {
 
   if (!restPath.isIdentifier()) {
     const shadowedParams = new Set<string>();
-    collectShadowedParamsNames(restPath, path.scope, shadowedParams);
+    if (path.get("params").some(param => hasParameterExpressions(param.node))) {
+      // Rest patterns are moved into the body before ordinary params lowering.
+      // Capture all original parameter shadows while their environment is known.
+      for (const param of path.get("params")) {
+        collectShadowedParamsNames(param, scope, shadowedParams, true);
+      }
+    } else {
+      collectShadowedParamsNames(restPath, scope, shadowedParams);
+    }
 
     let needsIIFE = shadowedParams.size > 0;
     if (!needsIIFE) {
@@ -319,6 +331,16 @@ export default function convertFunctionRest(path: NodePath<t.Function>) {
           buildScopeIIFE(shadowedParams, path.node.body as t.BlockStatement),
         ]),
       );
+      const arrowPath = path.get(
+        "body.body.0.argument.callee",
+      ) as NodePath<t.ArrowFunctionExpression>;
+      arrowPath.arrowFunctionToExpression();
+      arrowPath.node.generator = node.generator;
+      arrowPath.node.async = node.async;
+      if (node.async && !node.generator) onAsyncBodyWrapped?.();
+      // The outer function initializes parameters and returns the promise/iterator.
+      node.generator = false;
+      node.async = false;
     }
   }
 

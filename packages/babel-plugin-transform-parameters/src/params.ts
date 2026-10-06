@@ -4,6 +4,7 @@ import {
   getIIFEVisitor,
   collectShadowedParamsNames,
   buildScopeIIFE,
+  hasParameterExpressions,
 } from "./shadow-utils.ts";
 
 const buildDefaultParam = template.statement(`
@@ -49,8 +50,16 @@ export default function convertFunctionParams(
   const body: t.Statement[] = [];
   const shadowedParams = new Set<string>();
 
+  const parameterExpressions = params.some(param =>
+    hasParameterExpressions(param.node),
+  );
   for (const param of params) {
-    collectShadowedParamsNames(param, scope, shadowedParams);
+    collectShadowedParamsNames(
+      param,
+      scope,
+      shadowedParams,
+      parameterExpressions,
+    );
   }
 
   const state = {

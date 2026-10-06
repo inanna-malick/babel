@@ -27,10 +27,30 @@ export const getIIFEVisitor: () => Visitor<State> = () =>
       (path: NodePath) => path.skip(),
   }));
 
+// Parameter expressions create a parameter environment distinct from body vars.
+export function hasParameterExpressions(node: t.Node): boolean {
+  if (t.isAssignmentPattern(node)) return true;
+  if (t.isRestElement(node)) return hasParameterExpressions(node.argument);
+  if (t.isArrayPattern(node)) {
+    return node.elements.some(
+      element => element && hasParameterExpressions(element),
+    );
+  }
+  if (t.isObjectPattern(node)) {
+    return node.properties.some(property =>
+      t.isRestElement(property)
+        ? hasParameterExpressions(property.argument)
+        : property.computed || hasParameterExpressions(property.value),
+    );
+  }
+  return false;
+}
+
 export function collectShadowedParamsNames(
   param: NodePath<t.Function["params"][number]>,
   functionScope: Scope,
   shadowedParams: Set<string>,
+  parameterExpressions = false,
 ) {
   for (const name of Object.keys(param.getBindingIdentifiers())) {
     const constantViolations = functionScope.bindings[name]?.constantViolations;
@@ -39,11 +59,11 @@ export function collectShadowedParamsNames(
         const node = redeclarator.node;
         // If a constant violation is a var or a function declaration,
         // we first check to see if it's a var without an init.
-        // If so, we remove that declarator.
+        // Without parameter expressions, we can remove that declarator.
         // Otherwise, we have to wrap it in an IIFE.
         switch (node.type) {
           case "VariableDeclarator": {
-            if (node.init === null) {
+            if (node.init === null && !parameterExpressions) {
               const declaration = redeclarator.parentPath;
               // The following uninitialized var declarators should not be removed
               // for (var x in {})

@@ -1,0 +1,1 @@
+{"plugins":["transform-parameters","transform-destructuring"],"parserOpts":{"allowReturnOutsideFunction":true},"minNodeVersion":"10.0.0"}

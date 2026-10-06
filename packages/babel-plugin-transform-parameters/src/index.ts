@@ -1,3 +1,5 @@
+import { template } from "@babel/core";
+import type { types as t } from "@babel/core";
 import { declare } from "@babel/helper-plugin-utils";
 import convertFunctionParams from "./params.ts";
 import convertFunctionRest from "./rest.ts";
@@ -45,11 +47,25 @@ export default declare((api, options: Options) => {
           if (!path.isFunctionExpression()) return;
         }
 
-        const convertedRest = convertFunctionRest(path);
+        let asyncBodyWrapped = false;
+        const convertedRest = convertFunctionRest(path, () => {
+          asyncBodyWrapped = true;
+        });
         const convertedParams = convertFunctionParams(
           path,
           ignoreFunctionLength,
         );
+
+        if (asyncBodyWrapped) {
+          // Finalize after both passes so all parameter initialization rejects.
+          path.node.body = template.statement.ast`{
+            try {
+              ${(path.node.body as t.BlockStatement).body}
+            } catch (e) {
+              return Promise.reject(e);
+            }
+          }` as t.BlockStatement;
+        }
 
         if (convertedRest || convertedParams) {
           // Manually reprocess this scope to ensure that the moved params are updated.
