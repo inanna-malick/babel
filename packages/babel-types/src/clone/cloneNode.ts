@@ -87,20 +87,30 @@ function cloneNodeInternal<T extends t.Node | undefined | null>(
       if (hasOwn(node, field)) {
         if (deep) {
           newNode[field] =
-            isFile(node) && field === "comments"
-              ? maybeCloneComments(
-                  node.comments,
-                  deep,
-                  withoutLoc,
-                  commentsCache,
-                )
-              : cloneIfNodeOrArray(
-                  // @ts-expect-error node[field] has been guarded by has check
-                  node[field],
-                  true,
-                  withoutLoc,
-                  commentsCache,
-                );
+            isFile(node) && field === "tokens" && Array.isArray(node.tokens)
+              ? node.tokens.map(token => {
+                  if (
+                    token?.type === "CommentBlock" ||
+                    token?.type === "CommentLine"
+                  ) {
+                    return cloneComment(token, withoutLoc, commentsCache);
+                  }
+                  return cloneIfNode(token, true, withoutLoc, commentsCache);
+                })
+              : isFile(node) && field === "comments"
+                ? maybeCloneComments(
+                    node.comments,
+                    deep,
+                    withoutLoc,
+                    commentsCache,
+                  )
+                : cloneIfNodeOrArray(
+                    // @ts-expect-error node[field] has been guarded by has check
+                    node[field],
+                    true,
+                    withoutLoc,
+                    commentsCache,
+                  );
         } else {
           newNode[field] =
             // @ts-expect-error node[field] has been guarded by has check
@@ -159,19 +169,22 @@ function maybeCloneComments<T extends t.Comment>(
   if (!comments || !deep) {
     return comments;
   }
-  return comments.map(comment => {
-    const cache = commentsCache.get(comment);
-    if (cache) return cache;
+  return comments.map(comment =>
+    cloneComment(comment, withoutLoc, commentsCache),
+  );
+}
 
-    const { type, value, loc } = comment;
+function cloneComment<T extends t.Comment>(
+  comment: T,
+  withoutLoc: boolean,
+  commentsCache: Map<T, T>,
+): T {
+  const cache = commentsCache.get(comment);
+  if (cache) return cache;
 
-    const ret = { type, value, loc } as T;
-    if (withoutLoc) {
-      ret.loc = undefined;
-    }
-
-    commentsCache.set(comment, ret);
-
-    return ret;
-  });
+  const { type, value, loc } = comment;
+  const ret = { type, value, loc } as T;
+  if (withoutLoc) ret.loc = undefined;
+  commentsCache.set(comment, ret);
+  return ret;
 }

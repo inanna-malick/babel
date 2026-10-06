@@ -170,4 +170,57 @@ describe("cloneNode", function () {
 
     expect(newCode).toBe(code);
   });
+  describe("token-enabled Files", () => {
+    const sources = ["/*block*/0+0;", "0+//line\n0;", "0+0;/*tail*/"];
+    it.each(sources)("deep clones comment tokens: %s", source => {
+      const file = parse(source, { tokens: true });
+      const cloned = t.cloneNode(file);
+      expect(cloned.tokens).not.toBe(file.tokens);
+      const comment = file.comments[0];
+      const index = file.tokens.indexOf(comment);
+      expect(index).toBeGreaterThanOrEqual(0);
+      expect(cloned.tokens[index]).toBe(cloned.comments[0]);
+      expect(cloned.tokens[index]).not.toBe(comment);
+      expect(cloned.tokens[index].value).toBe(comment.value);
+      expect(cloned.tokens[index].loc).toBe(comment.loc);
+      cloned.tokens[index].value = "mutated";
+      expect(comment.value).not.toBe("mutated");
+      for (const token of file.tokens.filter(
+        token => typeof token.type !== "string",
+      )) {
+        expect(cloned.tokens[file.tokens.indexOf(token)]).toBe(token);
+      }
+    });
+    it("preserves comment attachment aliases while removing locations", () => {
+      const file = parse("/*block*/0+0;", { tokens: true });
+      const comment = file.comments[0];
+      // Explicit shared comment exercises token/File/attachment cache identity.
+      file.program.body[0].leadingComments = [comment];
+      const clone = t.cloneNode(file, true, true);
+      const index = file.tokens.indexOf(comment);
+      expect(clone.tokens[index]).toBe(clone.comments[0]);
+      expect(clone.program.body[0].leadingComments[0]).toBe(clone.comments[0]);
+      expect(clone.comments[0].loc).toBeUndefined();
+      expect(clone.loc).toBeNull();
+      expect(clone.program.loc).toBeNull();
+      expect(comment.loc).toBeDefined();
+    });
+    it("retains shallow token/comment children with root-only loc removal", () => {
+      const file = parse("//line\n0+0;", { tokens: true });
+      const clone = t.cloneNode(file, false, true);
+      expect(clone.tokens).toBe(file.tokens);
+      expect(clone.comments).toBe(file.comments);
+      expect(clone.program).toBe(file.program);
+      expect(clone.loc).toBeNull();
+      expect(clone.program.loc).toBe(file.program.loc);
+      expect(clone.comments[0].loc).toBeDefined();
+    });
+    it("retains generic AST token compatibility and opaque null tokens", () => {
+      const file = t.file(t.program([]), [], [t.identifier("token"), null]);
+      const clone = t.cloneNode(file);
+      expect(clone.tokens[0]).not.toBe(file.tokens[0]);
+      expect(clone.tokens[0].name).toBe("token");
+      expect(clone.tokens[1]).toBeNull();
+    });
+  });
 });
